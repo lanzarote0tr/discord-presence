@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: http: https:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>Custom Discord Presence</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -14,7 +18,10 @@
             <p class="eyebrow">Discord Rich Presence</p>
             <h1>Custom Presence</h1>
           </div>
-          <div class="status-pill" id="statusPill">Stopped</div>
+          <div class="topbar-status">
+            <span class="save-state" id="saveState" role="status" aria-live="polite">Saved</span>
+            <div class="status-pill" id="statusPill" role="status" aria-live="polite">Stopped</div>
+          </div>
         </header>
 
         <form id="presenceForm" class="form-stack" novalidate>
@@ -25,7 +32,7 @@
             <div class="form-grid">
               <label class="field">
                 <span>Application client ID</span>
-                <input id="clientId" name="clientId" inputmode="numeric" autocomplete="off" placeholder="123456789012345678" />
+                <input id="clientId" name="clientId" inputmode="numeric" autocomplete="off" maxlength="20" pattern="[0-9]*" spellcheck="false" placeholder="123456789012345678" />
               </label>
 
               <label class="field">
@@ -198,14 +205,13 @@
         </form>
 
         <footer class="actions">
+          <p class="message" id="message" role="status" aria-live="polite"></p>
           <button id="startButton" class="primary" type="button">Start Presence</button>
           <button id="updateButton" type="button" disabled>Update</button>
           <button id="pauseResumeButton" type="button">Resume Timer</button>
           <button id="stopButton" type="button" disabled>Stop</button>
           <button id="saveButton" type="button">Save Preset</button>
         </footer>
-
-        <p class="message" id="message" role="status" aria-live="polite"></p>
       </section>
 
     </main>

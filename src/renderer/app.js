@@ -1,5 +1,6 @@
 const form = document.querySelector('#presenceForm');
 const statusPill = document.querySelector('#statusPill');
+const saveState = document.querySelector('#saveState');
 const message = document.querySelector('#message');
 const presetSelect = document.querySelector('#presetSelect');
 const idlePresetSelect = document.querySelector('#idlePresetSelect');
@@ -26,6 +27,10 @@ let workspace = null;
 let presenceRunning = false;
 let timelineDirty = false;
 let timer = null;
+let saveTimer = null;
+let statusUnsubscribe = null;
+let busy = false;
+let saveRevision = 0;
 let validationMessage = '';
 
 function formControl(name) {
@@ -146,6 +151,18 @@ function applyConnection() {
       control.value = value ?? '';
     }
   });
+}
+
+function cloneWorkspace() {
+  return JSON.parse(JSON.stringify(workspace));
+}
+
+function restoreWorkspace(snapshot) {
+  workspace = snapshot;
+  applyConnection();
+  renderPresetOptions();
+  applyPreset(activePreset());
+  setPresenceRunning(presenceRunning);
 }
 
 function renderPresetOptions() {
@@ -410,13 +427,21 @@ function setPresenceRunning(nextRunning) {
   statusPill.textContent = idling ? 'Idling' : presenceRunning ? 'Running' : 'Stopped';
   statusPill.classList.toggle('running', presenceRunning);
   statusPill.classList.toggle('idling', idling);
-  startButton.disabled = presenceRunning;
-  updateButton.disabled = !presenceRunning;
-  stopButton.disabled = !presenceRunning;
-  presetSelect.disabled = idling;
-  idlePresetSelect.disabled = idling;
-  newPresetButton.disabled = idling;
-  deletePresetButton.disabled = idling || workspace.presets.length === 1;
+  startButton.disabled = busy || presenceRunning;
+  updateButton.disabled = busy || !presenceRunning;
+  pauseResumeButton.disabled = busy;
+  stopButton.disabled = busy || !presenceRunning;
+  saveButton.disabled = busy;
+  presetSelect.disabled = busy || idling;
+  idlePresetSelect.disabled = busy || idling;
+  newPresetButton.disabled = busy || idling;
+  deletePresetButton.disabled = busy || idling || workspace.presets.length === 1;
+  form.setAttribute('aria-busy', String(busy));
+}
+
+function setBusy(nextBusy) {
+  busy = nextBusy;
+  setPresenceRunning(presenceRunning);
 }
 
 function setMessage(text, isError = false, isValidation = false) {
@@ -425,12 +450,23 @@ function setMessage(text, isError = false, isValidation = false) {
   message.dataset.validation = isValidation ? 'true' : 'false';
 }
 
+function setSaveState(text, isError = false) {
+  saveState.textContent = text;
+  saveState.classList.toggle('error', isError);
+}
+
 function showValidationError(error) {
   validationMessage = error;
   setMessage(error, true, true);
 }
 
 async function persistWorkspace(successText = '') {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const revision = saveRevision;
+  setSaveState('Saving');
   try {
     const result = await window.presenceApi.saveConfig(workspace);
     if (result && result.ok === false) {
@@ -439,11 +475,26 @@ async function persistWorkspace(successText = '') {
     if (successText) {
       setMessage(successText);
     }
+    setSaveState(revision === saveRevision ? 'Saved' : 'Unsaved');
     return true;
   } catch (error) {
+    setSaveState('Save failed', true);
     setMessage(error.message || 'Could not save presets.', true);
     return false;
   }
+}
+
+function scheduleWorkspaceSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+  }
+  saveRevision += 1;
+  setSaveState('Unsaved');
+  saveTimer = setTimeout(async () => {
+    saveTimer = null;
+    commitFormToPreset();
+    await persistWorkspace();
+  }, 500);
 }
 
 async function invoke(action, config, successText) {
@@ -454,6 +505,7 @@ async function invoke(action, config, successText) {
   }
 
   setMessage('Working...');
+  setBusy(true);
   try {
     const result = await window.presenceApi[action](config);
     if (result && result.ok === false) {
@@ -464,6 +516,8 @@ async function invoke(action, config, successText) {
   } catch (requestError) {
     setMessage(requestError.message || 'Something went wrong.', true);
     return null;
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -480,14 +534,7 @@ form.addEventListener('input', (event) => {
     timelineDirty = true;
   }
   renderPreview();
-});
-
-form.addEventListener('change', async (event) => {
-  if (!connectionFieldNames.includes(event.target.name)) {
-    return;
-  }
-  workspace.connection = stateApi.normalizeConnection(getConnection());
-  await persistWorkspace('Connection saved.');
+  scheduleWorkspaceSave();
 });
 
 idlePresetSelect.addEventListener('change', async () => {
@@ -499,11 +546,7 @@ idlePresetSelect.addEventListener('change', async () => {
 
 presetSelect.addEventListener('change', async () => {
   commitFormToPreset();
-  const previousPresetId = workspace.activePresetId;
-  const previousTimelines = new Map(workspace.presets.map((preset) => [
-    preset.id,
-    { ...preset.timeline }
-  ]));
+  const snapshot = cloneWorkspace();
   const previousTimerWasRunning = activePreset().timeline.running;
   const nextPreset = stateApi.switchActivePreset(workspace, presetSelect.value);
   if (!nextPreset) {
@@ -514,22 +557,10 @@ presetSelect.addEventListener('change', async () => {
   renderPresetOptions();
   applyPreset(nextPreset);
 
-  const restorePreviousPreset = () => {
-    workspace.presets.forEach((preset) => {
-      const timeline = previousTimelines.get(preset.id);
-      if (timeline) {
-        preset.timeline = { ...timeline };
-      }
-    });
-    workspace.activePresetId = previousPresetId;
-    renderPresetOptions();
-    applyPreset(activePreset());
-  };
-
   if (presenceRunning) {
     const error = validateConfig(getDraftConfig(), true);
     if (error) {
-      restorePreviousPreset();
+      restoreWorkspace(snapshot);
       setMessage(`Cannot switch to "${nextPreset.name}": ${error}`, true);
       return;
     }
@@ -540,7 +571,7 @@ presetSelect.addEventListener('change', async () => {
   if (presenceRunning) {
     const result = await updatePresenceForActivePreset(`Switched to ${nextPreset.name}. Timer switched.`);
     if (!result) {
-      restorePreviousPreset();
+      restoreWorkspace(snapshot);
       await persistWorkspace();
     }
   } else {
@@ -552,12 +583,23 @@ presetSelect.addEventListener('change', async () => {
 
 newPresetButton.addEventListener('click', async () => {
   commitFormToPreset();
+  const snapshot = cloneWorkspace();
   const preset = stateApi.createPreset(`Preset ${workspace.presets.length + 1}`);
   workspace.presets.push(preset);
-  workspace.activePresetId = preset.id;
+  stateApi.switchActivePreset(workspace, preset.id);
   renderPresetOptions();
   applyPreset(preset);
-  await persistWorkspace('New preset created.');
+  await persistWorkspace();
+
+  if (presenceRunning) {
+    const result = await updatePresenceForActivePreset(`Created and switched to ${preset.name}.`);
+    if (!result) {
+      restoreWorkspace(snapshot);
+      await persistWorkspace();
+    }
+  } else {
+    setMessage('New preset created.');
+  }
 });
 
 deletePresetButton.addEventListener('click', async () => {
@@ -569,7 +611,11 @@ deletePresetButton.addEventListener('click', async () => {
     return;
   }
 
+  commitFormToPreset();
+  const snapshot = cloneWorkspace();
   const index = workspace.presets.findIndex((item) => item.id === preset.id);
+  const nextPreset = workspace.presets[index === workspace.presets.length - 1 ? index - 1 : index + 1];
+  stateApi.switchActivePreset(workspace, nextPreset.id);
   workspace.presets.splice(index, 1);
   if (workspace.idlePresetId === preset.id) {
     workspace.idlePresetId = '';
@@ -577,14 +623,16 @@ deletePresetButton.addEventListener('click', async () => {
   if (workspace.idlingForPresetId === preset.id) {
     workspace.idlingForPresetId = '';
   }
-  const nextPreset = workspace.presets[Math.min(index, workspace.presets.length - 1)];
-  workspace.activePresetId = nextPreset.id;
   renderPresetOptions();
   applyPreset(nextPreset);
   await persistWorkspace();
 
   if (presenceRunning) {
-    await updatePresenceForActivePreset(`Deleted ${preset.name} and switched presets.`);
+    const result = await updatePresenceForActivePreset(`Deleted ${preset.name} and switched to ${nextPreset.name}.`);
+    if (!result) {
+      restoreWorkspace(snapshot);
+      await persistWorkspace();
+    }
   } else {
     setMessage(`${preset.name} deleted.`);
   }
@@ -600,6 +648,7 @@ startButton.addEventListener('click', async () => {
 
   commitFormToPreset();
   const preset = activePreset();
+  const previousTimeline = { ...preset.timeline };
   if (preset.fields.showTimestamp && !preset.timeline.running) {
     stateApi.resumeTimeline(preset);
   }
@@ -609,6 +658,11 @@ startButton.addEventListener('click', async () => {
   const result = await invoke('start', getPublishConfig(), 'Presence is visible in Discord.');
   if (result) {
     setPresenceRunning(true);
+    renderPreview();
+  } else {
+    preset.timeline = previousTimeline;
+    setElapsedInputs(stateApi.currentElapsedSeconds(preset));
+    await persistWorkspace();
     renderPreview();
   }
 });
@@ -686,6 +740,7 @@ pauseResumeButton.addEventListener('click', async () => {
 
   commitFormToPreset();
   const preset = activePreset();
+  const previousTimeline = { ...preset.timeline };
 
   if (preset.timeline.running) {
     const idle = presenceRunning ? idlePreset() : null;
@@ -733,7 +788,12 @@ pauseResumeButton.addEventListener('click', async () => {
 
   const stateText = preset.timeline.running ? 'resumed' : 'paused';
   if (presenceRunning) {
-    await updatePresenceForActivePreset(`Timer ${stateText}.`);
+    const result = await updatePresenceForActivePreset(`Timer ${stateText}.`);
+    if (!result) {
+      preset.timeline = previousTimeline;
+      setElapsedInputs(stateApi.currentElapsedSeconds(preset));
+      await persistWorkspace();
+    }
   } else {
     setMessage(`Timer ${stateText}.`);
   }
@@ -742,6 +802,7 @@ pauseResumeButton.addEventListener('click', async () => {
 
 stopButton.addEventListener('click', async () => {
   setMessage('Working...');
+  setBusy(true);
   try {
     const result = await window.presenceApi.stop();
     if (result && result.ok === false) {
@@ -764,6 +825,8 @@ stopButton.addEventListener('click', async () => {
     setMessage('Presence stopped. The preset timer keeps its current state.');
   } catch (error) {
     setMessage(error.message || 'Could not stop presence.', true);
+  } finally {
+    setBusy(false);
   }
 });
 
@@ -781,12 +844,49 @@ saveButton.addEventListener('click', async () => {
   renderPreview();
 });
 
+async function handlePresenceStatus(payload) {
+  if (!payload || payload.status !== 'disconnected' || !presenceRunning || !workspace) {
+    return;
+  }
+
+  commitFormToPreset();
+  if (isIdling()) {
+    const idle = activePreset();
+    const sourcePreset = presetById(workspace.idlingForPresetId);
+    stateApi.pauseTimeline(idle);
+    workspace.idlingForPresetId = '';
+    if (sourcePreset) {
+      workspace.activePresetId = sourcePreset.id;
+    }
+  } else {
+    stateApi.pauseTimeline(activePreset());
+  }
+
+  setPresenceRunning(false);
+  renderPresetOptions();
+  applyPreset(activePreset());
+  await persistWorkspace();
+  setMessage(payload.message || 'Discord disconnected. The active timer was paused.', true);
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    const saved = await window.presenceApi.loadConfig();
+    const [loaded, runtimeStatus] = await Promise.all([
+      window.presenceApi.loadConfig(),
+      window.presenceApi.getStatus()
+    ]);
+    if (loaded && loaded.ok === false) {
+      throw new Error(loaded.error);
+    }
+    if (runtimeStatus && runtimeStatus.ok === false) {
+      throw new Error(runtimeStatus.error);
+    }
+    const saved = loaded && Object.hasOwn(loaded, 'config') ? loaded.config : loaded;
+    const loadWarning = loaded && loaded.warning;
+    const runtimeRunning = Boolean(runtimeStatus && runtimeStatus.running);
     workspace = stateApi.normalizeWorkspace(saved || null);
     applyConnection();
-    if (isIdling()) {
+    if (isIdling() && !runtimeRunning) {
       const idle = activePreset();
       const sourcePreset = presetById(workspace.idlingForPresetId);
       stateApi.pauseTimeline(idle);
@@ -798,8 +898,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     renderPresetOptions();
     applyPreset(activePreset());
-    setPresenceRunning(false);
+    setPresenceRunning(runtimeRunning);
+    statusUnsubscribe = window.presenceApi.onStatus(handlePresenceStatus);
     timer = setInterval(renderPreview, 1000);
+    if (loadWarning) {
+      setMessage(loadWarning, true);
+    } else if (runtimeRunning) {
+      setMessage('Reconnected to the active presence session.');
+    }
   } catch (error) {
     setMessage(error.message || 'Could not load presets.', true);
   }
@@ -812,5 +918,11 @@ window.addEventListener('beforeunload', () => {
   }
   if (timer) {
     clearInterval(timer);
+  }
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+  }
+  if (statusUnsubscribe) {
+    statusUnsubscribe();
   }
 });

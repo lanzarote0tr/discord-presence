@@ -40,6 +40,10 @@ Switching presets pauses the previous timer and transfers timing to the selected
 so only the active application accumulates time. A paused timeline keeps its exact elapsed
 value until resumed.
 
+Edits are autosaved with atomic file replacement. If the saved JSON becomes malformed,
+the app preserves it as a timestamped `.corrupt-*` backup before starting with a clean
+workspace.
+
 Pausing an active timer republishes the presence without a Discord timestamp. Resuming
 backdates a new start timestamp from the saved elapsed value, since Discord RPC does not
 support a frozen progress timer.
@@ -47,3 +51,7 @@ support a frozen progress timer.
 You can designate any saved preset as the idling preset. Pausing switches Discord and
 the editor to that preset and starts its timer from zero. Resuming restores the original
 preset and continues its preserved timeline.
+
+On macOS, closing the editor window keeps an active presence connected in the background.
+Reopen the app from the Dock to restore the editor session. Use **Stop** or quit the app to
+clear the presence and disconnect from Discord.

@@ -3,7 +3,13 @@ const test = require('node:test');
 
 process.env.NODE_ENV = 'test';
 
-const { buildActivity, publishActivity } = require('../src/main');
+const {
+  buildActivity,
+  clientId,
+  publishActivity,
+  replaceActivity,
+  serializeConfig
+} = require('../src/main');
 
 async function publishedPayload(input) {
   let sentPayload;
@@ -116,4 +122,44 @@ test('passes external image URLs through to Discord activity assets', async () =
 
   assert.equal(payload.activity.assets.large_image, 'https://example.com/large.webp');
   assert.equal(payload.activity.assets.small_image, 'https://example.com/small.gif');
+});
+
+test('replaces an activity without clearing the current presence first', async () => {
+  let clearCalls = 0;
+  let requestCalls = 0;
+  const client = {
+    clearActivity() {
+      clearCalls += 1;
+    },
+    request() {
+      requestCalls += 1;
+      return Promise.resolve();
+    }
+  };
+
+  await replaceActivity(client, buildActivity({ details: 'Updated activity' }));
+
+  assert.equal(clearCalls, 0);
+  assert.equal(requestCalls, 1);
+});
+
+test('serializes valid workspace data with readable formatting', () => {
+  const serialized = serializeConfig({ version: 2, presets: [] });
+
+  assert.deepEqual(JSON.parse(serialized), { version: 2, presets: [] });
+  assert.match(serialized, /\n  "version"/);
+});
+
+test('rejects invalid or excessively large workspace data', () => {
+  assert.throws(() => serializeConfig(null), /must be an object/);
+  assert.throws(
+    () => serializeConfig({ value: 'x'.repeat(2 * 1024 * 1024) }),
+    /too large/
+  );
+});
+
+test('accepts only Discord-shaped numeric client IDs', () => {
+  assert.equal(clientId(' 123456789012345678 '), '123456789012345678');
+  assert.throws(() => clientId('not-a-client-id'), /valid Discord application client ID/);
+  assert.throws(() => clientId('1234'), /valid Discord application client ID/);
 });

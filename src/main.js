@@ -1,14 +1,18 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('node:path');
 const net = require('node:net');
+const { pathToFileURL } = require('node:url');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const DiscordRPC = require('discord-rpc');
 
+const MAX_CONFIG_BYTES = 2 * 1024 * 1024;
 let mainWindow;
 let rpcClient = null;
 let currentClientId = '';
 let currentActivity = null;
+let configWriteQueue = Promise.resolve();
+let quitAfterDisconnect = false;
 
 function configPath() {
   return path.join(app.getPath('userData'), 'presence-config.json');
@@ -17,37 +21,103 @@ function configPath() {
 async function readConfig() {
   try {
     const raw = await fs.readFile(configPath(), 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return null;
+    return { config: JSON.parse(raw), warning: '' };
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return { config: null, warning: '' };
+    }
+    if (error instanceof SyntaxError) {
+      const backupPath = `${configPath()}.corrupt-${Date.now()}`;
+      let moved = false;
+      try {
+        await fs.rename(configPath(), backupPath);
+        moved = true;
+      } catch {
+        // Keep the original parse error as the useful failure context.
+      }
+      return {
+        config: null,
+        warning: moved
+          ? `The saved workspace was invalid and was moved to ${backupPath}.`
+          : 'The saved workspace is invalid and could not be loaded.'
+      };
+    }
+    throw error;
   }
 }
 
-async function writeConfig(config) {
+function serializeConfig(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error('Workspace data must be an object.');
+  }
+  const serialized = JSON.stringify(config, null, 2);
+  if (typeof serialized !== 'string') {
+    throw new Error('Workspace data could not be serialized.');
+  }
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_CONFIG_BYTES) {
+    throw new Error('Workspace data is too large to save.');
+  }
+  return serialized;
+}
+
+async function writeConfigFile(serialized) {
   await fs.mkdir(app.getPath('userData'), { recursive: true });
-  await fs.writeFile(configPath(), JSON.stringify(config, null, 2), 'utf8');
+  const temporaryPath = `${configPath()}.${process.pid}-${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, serialized, 'utf8');
+    await fs.rename(temporaryPath, configPath());
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {});
+  }
+}
+
+function writeConfig(config) {
+  const serialized = serializeConfig(config);
+  configWriteQueue = configWriteQueue
+    .catch(() => {})
+    .then(() => writeConfigFile(serialized));
+  return configWriteQueue;
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1060,
+    width: 840,
     height: 760,
-    minWidth: 860,
+    minWidth: 380,
     minHeight: 620,
     title: 'Custom Discord Presence',
     backgroundColor: '#101114',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const rendererUrl = pathToFileURL(path.join(__dirname, 'renderer', 'index.html')).href;
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== rendererUrl) {
+      event.preventDefault();
+    }
+  });
+  mainWindow.loadURL(rendererUrl);
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 function cleanText(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function clientId(value) {
+  const cleaned = cleanText(value);
+  if (!/^\d{17,20}$/.test(cleaned)) {
+    throw new Error('A valid Discord application client ID is required.');
+  }
+  return cleaned;
 }
 
 function activityType(value) {
@@ -221,17 +291,16 @@ function publishActivity(client, activity) {
 }
 
 async function replaceActivity(client, nextActivity) {
-  if (currentActivity) {
-    await client.clearActivity();
-  }
-
   await publishActivity(client, nextActivity);
 }
 
 if (process.env.NODE_ENV === 'test') {
   module.exports = {
     buildActivity,
-    publishActivity
+    clientId,
+    publishActivity,
+    replaceActivity,
+    serializeConfig
   };
 }
 
@@ -352,25 +421,31 @@ async function safelyDestroyClient(client) {
 }
 
 async function disconnectRpc() {
-  if (!rpcClient) {
+  const client = rpcClient;
+  rpcClient = null;
+  currentClientId = '';
+  currentActivity = null;
+  if (!client) {
     return;
   }
 
   try {
-    await rpcClient.clearActivity();
+    await client.clearActivity();
   } catch {
     // Discord may already be closed; clearing is best effort.
   }
 
   try {
-    await safelyDestroyClient(rpcClient);
+    await safelyDestroyClient(client);
   } catch {
     // Ignore shutdown races from the Discord IPC transport.
   }
+}
 
-  rpcClient = null;
-  currentClientId = '';
-  currentActivity = null;
+function notifyRenderer(status, message = '') {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('presence:status', { status, message });
+  }
 }
 
 async function connectRpc(clientId, release) {
@@ -388,6 +463,15 @@ async function connectRpc(clientId, release) {
       await client.login({ clientId });
       rpcClient = client;
       currentClientId = clientId;
+      client.once('disconnected', () => {
+        if (rpcClient !== client) {
+          return;
+        }
+        rpcClient = null;
+        currentClientId = '';
+        currentActivity = null;
+        notifyRenderer('disconnected', 'Discord closed the Rich Presence connection.');
+      });
       return client;
     } catch (error) {
       lastError = error;
@@ -408,7 +492,13 @@ async function connectRpc(clientId, release) {
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('config:load', async () => readConfig());
+  ipcMain.handle('config:load', async () => {
+    try {
+      return { ok: true, ...await readConfig() };
+    } catch (error) {
+      return errorResponse(error);
+    }
+  });
 
   ipcMain.handle('config:save', async (_event, config) => {
     try {
@@ -435,12 +525,9 @@ function registerIpcHandlers() {
 
   ipcMain.handle('presence:start', async (_event, config) => {
     try {
-      const clientId = cleanText(config.clientId);
-      if (!clientId) {
-        throw new Error('A Discord application client ID is required.');
-      }
+      const nextClientId = clientId(config.clientId);
 
-      const client = await connectRpc(clientId, config.discordRelease);
+      const client = await connectRpc(nextClientId, config.discordRelease);
       const nextActivity = buildActivity(config);
       await replaceActivity(client, nextActivity);
       currentActivity = nextActivity;
@@ -452,16 +539,9 @@ function registerIpcHandlers() {
 
   ipcMain.handle('presence:update', async (_event, config) => {
     try {
-      if (!rpcClient) {
-        throw new Error('Presence is not running.');
-      }
+      const nextClientId = clientId(config.clientId);
 
-      const clientId = cleanText(config.clientId);
-      if (!clientId) {
-        throw new Error('A Discord application client ID is required.');
-      }
-
-      const client = await connectRpc(clientId, config.discordRelease);
+      const client = await connectRpc(nextClientId, config.discordRelease);
       const nextActivity = buildActivity(config);
       await replaceActivity(client, nextActivity);
       currentActivity = nextActivity;
@@ -479,6 +559,12 @@ function registerIpcHandlers() {
       return errorResponse(error);
     }
   });
+
+  ipcMain.handle('presence:get-status', async () => ({
+    ok: true,
+    running: Boolean(rpcClient),
+    activity: currentActivity
+  }));
 }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -487,10 +573,19 @@ if (process.env.NODE_ENV !== 'test') {
   app.whenReady().then(createWindow);
 
   app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  app.on('before-quit', (event) => {
+    if (quitAfterDisconnect || !rpcClient) {
+      return;
+    }
+    event.preventDefault();
     disconnectRpc().finally(() => {
-      if (process.platform !== 'darwin') {
-        app.quit();
-      }
+      quitAfterDisconnect = true;
+      app.quit();
     });
   });
 

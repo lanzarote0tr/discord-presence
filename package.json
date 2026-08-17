@@ -1,5 +1,6 @@
 {
   "name": "custom-discord-presence",
+  "productName": "Discord Presence",
   "version": "1.0.0",
   "description": "A desktop app for editing and publishing a custom Discord Rich Presence.",
   "main": "src/main.js",

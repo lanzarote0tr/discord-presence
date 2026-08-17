@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom Discord Presence</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="editor-panel" aria-label="Presence editor">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Discord Rich Presence</p>
+            <h1>Custom Presence</h1>
+          </div>
+          <div class="status-pill" id="statusPill">Stopped</div>
+        </header>
+
+        <form id="presenceForm" class="form-stack" novalidate>
+          <section class="form-section connection-section">
+            <div class="section-heading">
+              <h2>Connection</h2>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>Application client ID</span>
+                <input id="clientId" name="clientId" inputmode="numeric" autocomplete="off" placeholder="123456789012345678" />
+              </label>
+
+              <label class="field">
+                <span>Discord build</span>
+                <select id="discordRelease" name="discordRelease">
+                  <option value="canary">Discord Canary</option>
+                  <option value="stable">Discord</option>
+                  <option value="ptb">Discord PTB</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Presets</h2>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>Active preset</span>
+                <select id="presetSelect" name="presetSelect"></select>
+              </label>
+
+              <label class="field">
+                <span>Idling preset</span>
+                <select id="idlePresetSelect" name="idlePresetSelect"></select>
+              </label>
+
+              <label class="field field-wide">
+                <span>Preset name</span>
+                <input id="presetName" name="presetName" maxlength="60" placeholder="Untitled Preset" />
+              </label>
+
+              <div class="preset-actions field-wide">
+                <button id="newPresetButton" type="button">New Preset</button>
+                <button id="deletePresetButton" class="danger" type="button">Delete Preset</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="preview-panel" aria-label="Presence editor">
+            <div class="preview-card">
+              <div class="preview-card-header">
+                <select class="mockup-type" id="activityType" name="activityType" aria-label="Presence type">
+                  <option value="0">Playing</option>
+                  <option value="2">Listening to</option>
+                  <option value="3">Watching</option>
+                  <option value="5">Competing in</option>
+                </select>
+                <span class="preview-menu" aria-hidden="true">•••</span>
+              </div>
+              <div class="activity">
+                <div class="asset">
+                  <img class="asset-image" id="largePreviewImage" alt="" hidden />
+                  <div class="asset-label" id="largePreview">APP</div>
+                  <div class="small-asset">
+                    <img class="asset-image" id="smallPreviewImage" alt="" hidden />
+                    <span id="smallPreview">JS</span>
+                  </div>
+                </div>
+                <div class="activity-copy">
+                  <input
+                    class="mockup-field mockup-name"
+                    id="displayText"
+                    name="displayText"
+                    maxlength="128"
+                    aria-label="Display name"
+                    placeholder="Discord Presence"
+                  />
+                  <input
+                    class="mockup-field"
+                    id="details"
+                    name="details"
+                    maxlength="128"
+                    aria-label="Details"
+                    placeholder="Editing presence.js"
+                  />
+                  <input
+                    class="mockup-field"
+                    id="state"
+                    name="state"
+                    maxlength="128"
+                    aria-label="State"
+                    placeholder="Workspace: Discord Presence"
+                  />
+                  <span class="time-preview" id="timePreview">00:00</span>
+                </div>
+              </div>
+              <div class="preview-buttons" id="buttonPreview"></div>
+            </div>
+            <input id="statusDisplayType" name="statusDisplayType" type="hidden" value="custom" />
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Assets</h2>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>Large image key or URL</span>
+                <input id="largeImageKey" name="largeImageKey" placeholder="asset-key or https://..." />
+              </label>
+
+              <label class="field">
+                <span>Large image text</span>
+                <input id="largeImageText" name="largeImageText" maxlength="128" placeholder="Visual Studio Code" />
+              </label>
+
+              <label class="field">
+                <span>Small image key or URL</span>
+                <input id="smallImageKey" name="smallImageKey" placeholder="asset-key or https://..." />
+              </label>
+
+              <label class="field">
+                <span>Small image text</span>
+                <input id="smallImageText" name="smallImageText" maxlength="128" placeholder="JavaScript" />
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Buttons</h2>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>Button 1 label</span>
+                <input id="button1Label" name="button1Label" maxlength="32" placeholder="View project" />
+              </label>
+
+              <label class="field">
+                <span>Button 1 URL</span>
+                <input id="button1Url" name="button1Url" inputmode="url" placeholder="https://github.com/..." />
+              </label>
+
+              <label class="field">
+                <span>Button 2 label</span>
+                <input id="button2Label" name="button2Label" maxlength="32" placeholder="Website" />
+              </label>
+
+              <label class="field">
+                <span>Button 2 URL</span>
+                <input id="button2Url" name="button2Url" inputmode="url" placeholder="https://example.com" />
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Time</h2>
+            </div>
+
+            <div class="elapsed-fields" id="elapsedFields">
+              <label class="field">
+                <span>Hours</span>
+                <input id="elapsedHours" name="elapsedHours" type="number" min="0" max="99999" step="1" inputmode="numeric" value="0" />
+              </label>
+              <label class="field">
+                <span>Minutes</span>
+                <input id="elapsedMinutes" name="elapsedMinutes" type="number" min="0" max="59" step="1" inputmode="numeric" value="0" />
+              </label>
+              <label class="field">
+                <span>Seconds</span>
+                <input id="elapsedSeconds" name="elapsedSeconds" type="number" min="0" max="59" step="1" inputmode="numeric" value="0" />
+              </label>
+            </div>
+            <input id="showTimestamp" name="showTimestamp" type="hidden" value="true" />
+          </section>
+        </form>
+
+        <footer class="actions">
+          <button id="startButton" class="primary" type="button">Start Presence</button>
+          <button id="updateButton" type="button" disabled>Update</button>
+          <button id="pauseResumeButton" type="button">Resume Timer</button>
+          <button id="stopButton" type="button" disabled>Stop</button>
+          <button id="saveButton" type="button">Save Preset</button>
+        </footer>
+
+        <p class="message" id="message" role="status" aria-live="polite"></p>
+      </section>
+
+    </main>
+    <script src="./presence-state.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "custom-discord-presence",
+  "version": "1.0.0",
+  "description": "A desktop app for editing and publishing a custom Discord Rich Presence.",
+  "main": "src/main.js",
+  "scripts": {
+    "install:mac": "npm run package:mac && mkdir -p \"$HOME/Applications\" && ditto \"dist/Discord Presence-darwin-arm64/Discord Presence.app\" \"$HOME/Applications/Discord Presence.app\"",
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node --test",
+    "package:mac": "electron-packager . \"Discord Presence\" --platform=darwin --arch=arm64 --out=dist --overwrite --asar --prune=true --app-bundle-id=com.ethancho.discord-presence --app-category-type=public.app-category.utilities && codesign --force --deep --sign - \"dist/Discord Presence-darwin-arm64/Discord Presence.app\""
+  },
+  "keywords": [
+    "discord",
+    "rich-presence",
+    "electron"
+  ],
+  "author": "Ethan Cho",
+  "license": "MIT",
+  "dependencies": {
+    "discord-rpc": "^4.0.1"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.2.0",
+    "electron": "^43.3.0"
+  }
+}

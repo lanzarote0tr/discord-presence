@@ -134,7 +134,7 @@
             <div class="form-grid">
               <label class="field">
                 <span>Large image key or URL</span>
-                <input id="largeImageKey" name="largeImageKey" placeholder="asset-key or https://..." />
+                <input id="largeImageKey" name="largeImageKey" list="assetKeywordList" placeholder="vscode, asset-key, or https://..." />
               </label>
 
               <label class="field">
@@ -144,7 +144,7 @@
 
               <label class="field">
                 <span>Small image key or URL</span>
-                <input id="smallImageKey" name="smallImageKey" placeholder="asset-key or https://..." />
+                <input id="smallImageKey" name="smallImageKey" list="assetKeywordList" placeholder="javascript, asset-key, or https://..." />
               </label>
 
               <label class="field">
@@ -152,6 +152,7 @@
                 <input id="smallImageText" name="smallImageText" maxlength="128" placeholder="JavaScript" />
               </label>
             </div>
+            <datalist id="assetKeywordList"></datalist>
           </section>
 
           <section class="form-section">
@@ -215,6 +216,7 @@
       </section>
 
     </main>
+    <script src="../asset-aliases.js"></script>
     <script src="./presence-state.js"></script>
     <script src="./app.js"></script>
   </body>

@@ -33,6 +33,19 @@ Use the **Discord build** selector for the client you actually run. If you use D
 4. Add any image assets you want to use under the application's Rich Presence assets.
 5. Use those asset names as the large and small image keys.
 
+## Image keywords
+
+The large and small image fields accept uploaded Discord asset keys, public image URLs,
+or these built-in keywords:
+
+`bash`, `css`, `electron`, `git`, `github`, `html`, `javascript`, `nodejs`, `python`,
+`react`, `typescript`, and `vscode`.
+
+Short aliases such as `js`, `ts`, `node`, `py`, and `code` also work. Built-in keywords
+resolve to public PNG artwork for both the live preview and Discord. To use an uploaded
+portal asset whose name conflicts with a built-in keyword, prefix it with `asset:`, such
+as `asset:vscode`.
+
 The app saves its workspace locally in Electron's app data folder. The application client
 ID and Discord build form one global connection shared by every preset. Each preset keeps
 its own presence type, activity fields, assets, buttons, and elapsed-time timeline.

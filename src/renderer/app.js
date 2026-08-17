@@ -18,7 +18,9 @@ const smallPreview = document.querySelector('#smallPreview');
 const largePreviewImage = document.querySelector('#largePreviewImage');
 const smallPreviewImage = document.querySelector('#smallPreviewImage');
 const buttonPreview = document.querySelector('#buttonPreview');
+const assetKeywordList = document.querySelector('#assetKeywordList');
 const elapsedFields = document.querySelector('#elapsedFields');
+const assetApi = window.assetAliases;
 const stateApi = window.presenceState;
 
 const connectionFieldNames = Object.keys(stateApi.defaultConnection);
@@ -231,7 +233,7 @@ function imageUrl(value) {
 }
 
 function renderAssetImage(image, label, value, fallback, alt) {
-  const source = imageUrl(value);
+  const source = imageUrl(assetApi.resolve(value));
   label.textContent = initials(value, fallback);
 
   if (!source) {
@@ -871,6 +873,11 @@ async function handlePresenceStatus(payload) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
+    assetApi.keywords.forEach((keyword) => {
+      const option = document.createElement('option');
+      option.value = keyword;
+      assetKeywordList.appendChild(option);
+    });
     const [loaded, runtimeStatus] = await Promise.all([
       window.presenceApi.loadConfig(),
       window.presenceApi.getStatus()

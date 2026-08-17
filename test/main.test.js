@@ -124,6 +124,16 @@ test('passes external image URLs through to Discord activity assets', async () =
   assert.equal(payload.activity.assets.small_image, 'https://example.com/small.gif');
 });
 
+test('publishes built-in asset keywords as external images', async () => {
+  const payload = await publishedPayload({
+    largeImageKey: 'vscode',
+    smallImageKey: 'js'
+  });
+
+  assert.match(payload.activity.assets.large_image, /vscode-original\.svg/);
+  assert.match(payload.activity.assets.small_image, /javascript-original\.svg/);
+});
+
 test('replaces an activity without clearing the current presence first', async () => {
   let clearCalls = 0;
   let requestCalls = 0;

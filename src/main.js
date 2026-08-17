@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const DiscordRPC = require('discord-rpc');
+const assetAliases = require('./asset-aliases');
 
 const MAX_CONFIG_BYTES = 2 * 1024 * 1024;
 let mainWindow;
@@ -196,9 +197,9 @@ function buildActivity(input) {
     name: statusDisplayName(displaySelection, displayType, state, details, displayText),
     details,
     state,
-    largeImageKey: cleanText(input.largeImageKey),
+    largeImageKey: cleanText(assetAliases.resolve(input.largeImageKey)),
     largeImageText: cleanText(input.largeImageText),
-    smallImageKey: cleanText(input.smallImageKey),
+    smallImageKey: cleanText(assetAliases.resolve(input.smallImageKey)),
     smallImageText: cleanText(input.smallImageText),
     instance: false
   };

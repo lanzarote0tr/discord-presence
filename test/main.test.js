@@ -124,14 +124,40 @@ test('passes external image URLs through to Discord activity assets', async () =
   assert.equal(payload.activity.assets.small_image, 'https://example.com/small.gif');
 });
 
-test('publishes built-in asset keywords as external images', async () => {
+test('publishes uploaded asset keys without replacing them', async () => {
   const payload = await publishedPayload({
     largeImageKey: 'vscode',
-    smallImageKey: 'js'
+    smallImageKey: 'javascript'
+  });
+
+  assert.equal(payload.activity.assets.large_image, 'vscode');
+  assert.equal(payload.activity.assets.small_image, 'javascript');
+});
+
+test('publishes explicit built-in icons as external images', async () => {
+  const payload = await publishedPayload({
+    largeImageKey: 'icon:vscode',
+    smallImageKey: 'icon:js'
   });
 
   assert.match(payload.activity.assets.large_image, /vscode-original\.svg/);
   assert.match(payload.activity.assets.small_image, /javascript-original\.svg/);
+});
+
+test('replaces repository icon phrases before publishing', async () => {
+  const payload = await publishedPayload({
+    largeImageKey: 'terminal',
+    smallImageKey: 'nvim'
+  });
+
+  assert.equal(
+    payload.activity.assets.large_image,
+    'https://raw.githubusercontent.com/lanzarote0tr/discord-presence/main/Terminalicon3.png'
+  );
+  assert.equal(
+    payload.activity.assets.small_image,
+    'https://raw.githubusercontent.com/lanzarote0tr/discord-presence/main/neovim-mark.png'
+  );
 });
 
 test('replaces an activity without clearing the current presence first', async () => {

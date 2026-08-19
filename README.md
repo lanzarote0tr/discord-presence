@@ -36,15 +36,18 @@ Use the **Discord build** selector for the client you actually run. If you use D
 ## Image keywords
 
 The large and small image fields accept uploaded Discord asset keys, public image URLs,
-or these built-in keywords:
+or repository-backed keywords. `terminal` resolves to `Terminalicon3.png`, and `neovim`
+(also `nvim`) resolves to `neovim-mark.png` from this repository through
+`raw.githubusercontent.com`.
+
+Additional built-in icons are available with the `icon:` prefix:
 
 `bash`, `css`, `electron`, `git`, `github`, `html`, `javascript`, `nodejs`, `python`,
 `react`, `typescript`, and `vscode`.
 
-Short aliases such as `js`, `ts`, `node`, `py`, and `code` also work. Built-in keywords
-resolve to public PNG artwork for both the live preview and Discord. To use an uploaded
-portal asset whose name conflicts with a built-in keyword, prefix it with `asset:`, such
-as `asset:vscode`.
+Short aliases such as `icon:js`, `icon:ts`, `icon:node`, `icon:py`, and `icon:code` also
+work. To use a Discord portal asset whose name conflicts with an automatically replaced
+repository keyword, prefix it with `asset:`, such as `asset:terminal`.
 
 The app saves its workspace locally in Electron's app data folder. The application client
 ID and Discord build form one global connection shared by every preset. Each preset keeps

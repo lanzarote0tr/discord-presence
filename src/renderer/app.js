@@ -233,7 +233,7 @@ function imageUrl(value) {
 }
 
 function renderAssetImage(image, label, value, fallback, alt) {
-  const source = imageUrl(assetApi.resolve(value));
+  const source = imageUrl(assetApi.preview(value));
   label.textContent = initials(value, fallback);
 
   if (!source) {
@@ -873,9 +873,14 @@ async function handlePresenceStatus(payload) {
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
-    assetApi.keywords.forEach((keyword) => {
+    assetApi.repositoryKeywords.forEach((keyword) => {
       const option = document.createElement('option');
       option.value = keyword;
+      assetKeywordList.appendChild(option);
+    });
+    assetApi.keywords.forEach((keyword) => {
+      const option = document.createElement('option');
+      option.value = `icon:${keyword}`;
       assetKeywordList.appendChild(option);
     });
     const [loaded, runtimeStatus] = await Promise.all([

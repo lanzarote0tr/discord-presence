@@ -223,6 +223,29 @@ function formatElapsed(totalSeconds, isRunning) {
   return isRunning ? clock : `${clock} paused`;
 }
 
+function trayStatus(preset) {
+  if (presenceRunning && isIdling()) {
+    return 'idling';
+  }
+  if (!presenceRunning) {
+    return 'stopped';
+  }
+  return preset && preset.timeline.running ? 'running' : 'paused';
+}
+
+function updateTrayPreview(elapsedText) {
+  const preset = activePreset();
+  if (!preset || !window.presenceApi.updateTray) {
+    return;
+  }
+
+  window.presenceApi.updateTray({
+    status: trayStatus(preset),
+    elapsedText: elapsedText.replace(/ paused$/, ''),
+    detail: preset.name
+  }).catch(() => {});
+}
+
 function imageUrl(value) {
   try {
     const parsed = new URL(String(value || '').trim());
@@ -393,9 +416,11 @@ function renderPreview() {
   refreshElapsedInputs();
   const config = getDraftConfig();
   const preset = activePreset();
+  const elapsedText = formatElapsed(previewElapsedSeconds(), preset.timeline.running);
   elapsedFields.hidden = false;
   timePreview.hidden = false;
-  timePreview.textContent = formatElapsed(previewElapsedSeconds(), preset.timeline.running);
+  timePreview.textContent = elapsedText;
+  updateTrayPreview(elapsedText);
   pauseResumeButton.textContent = isIdling() || !preset.timeline.running
     ? 'Resume Timer'
     : 'Pause Timer';
@@ -847,7 +872,7 @@ saveButton.addEventListener('click', async () => {
 });
 
 async function handlePresenceStatus(payload) {
-  if (!payload || payload.status !== 'disconnected' || !presenceRunning || !workspace) {
+  if (!payload || !['disconnected', 'stopped'].includes(payload.status) || !presenceRunning || !workspace) {
     return;
   }
 
@@ -868,7 +893,10 @@ async function handlePresenceStatus(payload) {
   renderPresetOptions();
   applyPreset(activePreset());
   await persistWorkspace();
-  setMessage(payload.message || 'Discord disconnected. The active timer was paused.', true);
+  setMessage(
+    payload.message || 'Discord disconnected. The active timer was paused.',
+    payload.status === 'disconnected'
+  );
 }
 
 window.addEventListener('DOMContentLoaded', async () => {

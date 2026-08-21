@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, shell } = require('electron');
 const path = require('node:path');
 const net = require('node:net');
 const { pathToFileURL } = require('node:url');
@@ -14,6 +14,13 @@ let currentClientId = '';
 let currentActivity = null;
 let configWriteQueue = Promise.resolve();
 let quitAfterDisconnect = false;
+let appIsQuitting = false;
+let tray = null;
+let trayState = {
+  status: 'stopped',
+  elapsedText: '00:00',
+  detail: ''
+};
 
 function configPath() {
   return path.join(app.getPath('userData'), 'presence-config.json');
@@ -104,9 +111,127 @@ function createWindow() {
     }
   });
   mainWindow.loadURL(rendererUrl);
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'darwin' && !appIsQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function showWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function traySymbol(status) {
+  const symbols = {
+    running: '▶',
+    paused: 'Ⅱ',
+    idling: '◐',
+    stopped: '■',
+    disconnected: '!'
+  };
+  return symbols[status] || symbols.stopped;
+}
+
+function trayShape(status) {
+  const shapes = {
+    running: '<path fill="black" d="M7 5.2v9.6l7.4-4.8z"/>',
+    paused: '<path fill="black" d="M6 5h3v10H6zM11 5h3v10h-3z"/>',
+    idling: '<path fill="black" d="M12.8 15.5A5.9 5.9 0 0 1 9 4.9 6.1 6.1 0 1 0 12.8 15.5z"/>',
+    stopped: '<path fill="black" d="M6 6h8v8H6z"/>',
+    disconnected: '<path fill="black" d="M9 4h2v8H9zM9 14h2v2H9z"/>'
+  };
+  return shapes[status] || shapes.stopped;
+}
+
+function trayImage(status) {
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">',
+    '<rect width="20" height="20" fill="none"/>',
+    trayShape(status),
+    '</svg>'
+  ].join('');
+  const image = nativeImage.createFromDataURL(`data:image/svg+xml,${encodeURIComponent(svg)}`);
+  image.setTemplateImage(true);
+  return image;
+}
+
+function trayTitle(state = trayState) {
+  const elapsedText = cleanText(state.elapsedText) || '00:00';
+  return `${traySymbol(state.status)} ${elapsedText}`;
+}
+
+function trayTooltip(state = trayState) {
+  const labels = {
+    running: 'Running',
+    paused: 'Paused',
+    idling: 'Idling',
+    stopped: 'Stopped',
+    disconnected: 'Disconnected'
+  };
+  const status = labels[state.status] || labels.stopped;
+  const detail = cleanText(state.detail);
+  return detail ? `${status} - ${detail}` : status;
+}
+
+function setTrayState(nextState = {}) {
+  trayState = {
+    ...trayState,
+    ...nextState
+  };
+
+  if (!tray) {
+    return;
+  }
+
+  tray.setImage(trayImage(trayState.status));
+  if (process.platform === 'darwin') {
+    tray.setTitle(trayTitle(trayState));
+  }
+  tray.setToolTip(trayTooltip(trayState));
+}
+
+function createTray() {
+  if (tray) {
+    return;
+  }
+
+  tray = new Tray(trayImage(trayState.status));
+  tray.setIgnoreDoubleClickEvents(true);
+  tray.on('click', showWindow);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show Discord Presence', click: showWindow },
+    { type: 'separator' },
+    {
+      label: 'Stop Presence',
+      click: async () => {
+        await disconnectRpc();
+        setTrayState({ status: 'stopped', detail: 'Presence stopped' });
+        notifyRenderer('stopped', 'Presence stopped from the menu bar.');
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        appIsQuitting = true;
+        app.quit();
+      }
+    }
+  ]));
+  setTrayState();
 }
 
 function cleanText(value) {
@@ -301,7 +426,10 @@ if (process.env.NODE_ENV === 'test') {
     clientId,
     publishActivity,
     replaceActivity,
-    serializeConfig
+    serializeConfig,
+    traySymbol,
+    trayTitle,
+    trayTooltip
   };
 }
 
@@ -471,6 +599,7 @@ async function connectRpc(clientId, release) {
         rpcClient = null;
         currentClientId = '';
         currentActivity = null;
+        setTrayState({ status: 'disconnected', detail: 'Discord disconnected' });
         notifyRenderer('disconnected', 'Discord closed the Rich Presence connection.');
       });
       return client;
@@ -555,6 +684,7 @@ function registerIpcHandlers() {
   ipcMain.handle('presence:stop', async () => {
     try {
       await disconnectRpc();
+      setTrayState({ status: 'stopped', detail: 'Presence stopped' });
       return { ok: true };
     } catch (error) {
       return errorResponse(error);
@@ -566,12 +696,20 @@ function registerIpcHandlers() {
     running: Boolean(rpcClient),
     activity: currentActivity
   }));
+
+  ipcMain.handle('tray:update', async (_event, state) => {
+    setTrayState(state);
+    return { ok: true };
+  });
 }
 
 if (process.env.NODE_ENV !== 'test') {
   registerIpcHandlers();
 
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    createTray();
+    createWindow();
+  });
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
@@ -581,10 +719,12 @@ if (process.env.NODE_ENV !== 'test') {
 
   app.on('before-quit', (event) => {
     if (quitAfterDisconnect || !rpcClient) {
+      appIsQuitting = true;
       return;
     }
     event.preventDefault();
     disconnectRpc().finally(() => {
+      appIsQuitting = true;
       quitAfterDisconnect = true;
       app.quit();
     });

@@ -8,7 +8,10 @@ const {
   clientId,
   publishActivity,
   replaceActivity,
-  serializeConfig
+  serializeConfig,
+  traySymbol,
+  trayTitle,
+  trayTooltip
 } = require('../src/main');
 
 async function publishedPayload(input) {
@@ -198,4 +201,19 @@ test('accepts only Discord-shaped numeric client IDs', () => {
   assert.equal(clientId(' 123456789012345678 '), '123456789012345678');
   assert.throws(() => clientId('not-a-client-id'), /valid Discord application client ID/);
   assert.throws(() => clientId('1234'), /valid Discord application client ID/);
+});
+
+test('formats tray title with a status icon and elapsed time', () => {
+  assert.equal(trayTitle({ status: 'running', elapsedText: '12:34' }), '▶ 12:34');
+  assert.equal(trayTitle({ status: 'paused', elapsedText: '1:02:03' }), 'Ⅱ 1:02:03');
+  assert.equal(trayTitle({ status: 'unknown', elapsedText: '' }), '■ 00:00');
+});
+
+test('formats tray tooltip with status and active preset detail', () => {
+  assert.equal(traySymbol('idling'), '◐');
+  assert.equal(
+    trayTooltip({ status: 'idling', detail: 'Idle Preset' }),
+    'Idling - Idle Preset'
+  );
+  assert.equal(trayTooltip({ status: 'disconnected', detail: '' }), 'Disconnected');
 });

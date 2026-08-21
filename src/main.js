@@ -15,6 +15,7 @@ let currentActivity = null;
 let configWriteQueue = Promise.resolve();
 let quitAfterDisconnect = false;
 let appIsQuitting = false;
+let quitShutdown = null;
 let tray = null;
 let trayState = {
   status: 'stopped',
@@ -226,8 +227,7 @@ function createTray() {
     {
       label: 'Quit',
       click: () => {
-        appIsQuitting = true;
-        app.quit();
+        quitApplication();
       }
     }
   ]));
@@ -571,6 +571,28 @@ async function disconnectRpc() {
   }
 }
 
+function quitApplication() {
+  app.quit();
+}
+
+function finishQuit() {
+  appIsQuitting = true;
+  quitAfterDisconnect = true;
+  app.quit();
+}
+
+function disconnectBeforeQuit() {
+  if (!quitShutdown) {
+    setTrayState({ status: 'stopped', detail: 'Ending Discord session' });
+    quitShutdown = disconnectRpc()
+      .catch(() => {
+        // Quit should still complete if Discord is already gone or refuses cleanup.
+      })
+      .then(finishQuit);
+  }
+  return quitShutdown;
+}
+
 function notifyRenderer(status, message = '') {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('presence:status', { status, message });
@@ -718,16 +740,17 @@ if (process.env.NODE_ENV !== 'test') {
   });
 
   app.on('before-quit', (event) => {
-    if (quitAfterDisconnect || !rpcClient) {
+    if (quitAfterDisconnect) {
       appIsQuitting = true;
       return;
     }
-    event.preventDefault();
-    disconnectRpc().finally(() => {
+    if (!rpcClient && !quitShutdown) {
       appIsQuitting = true;
-      quitAfterDisconnect = true;
-      app.quit();
-    });
+      return;
+    }
+
+    event.preventDefault();
+    disconnectBeforeQuit();
   });
 
   app.on('activate', () => {
